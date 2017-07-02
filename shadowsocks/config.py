@@ -3,8 +3,8 @@ import logging
 #Config
 MYSQL_HOST = 'mengsky.net'
 MYSQL_PORT = 3306
-MYSQL_USER = 'root'
-MYSQL_PASS = 'root'
+MYSQL_USER = 'ss'
+MYSQL_PASS = 'mima'
 MYSQL_DB = 'shadowsocks'
 
 MANAGE_PASS = 'passwd'
@@ -13,7 +13,7 @@ MANAGE_BIND_IP = '127.0.0.1'
 #make sure this port is idle
 MANAGE_PORT = 23333
 
-PANEL_VERSION = 'V3' # V2 or V3. V2 not support API
+PANEL_VERSION = 'V2' # V2 or V3. V2 not support API
 API_URL = 'http://domain/mu'
 API_PASS = 'mupass'
 NODE_ID = '1'
