@@ -802,8 +802,8 @@ class TCPRelay(object):
                         break
                     else:
                         if handler.remote_address:
-                            logging.warn('timed out: %s:%d' %
-                                         handler.remote_address)
+                            logging.warn('[%d]-timed out: %s:%d' %
+                                         self._config['server_port'],handler.remote_address)
                         else:
                             logging.warn('timed out')
                         handler.destroy()
