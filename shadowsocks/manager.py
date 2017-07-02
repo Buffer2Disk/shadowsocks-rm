@@ -83,7 +83,7 @@ class Manager(object):
             logging.error("server already exists at %s:%d" % (config['server'],
                                                               port))
             return
-        logging.info("adding server at %s:%d" % (config['server'], port))
+        #logging.info("adding server at %s:%d" % (config['server'], port))
         t = tcprelay.TCPRelay(config, self._dns_resolver, False,
                               self.stat_callback)
         u = udprelay.UDPRelay(config, self._dns_resolver, False,

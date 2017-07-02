@@ -184,7 +184,7 @@ class DbTransfer(object):
         timeout = 30
         socket.setdefaulttimeout(timeout)
         while True:
-            logging.info('db loop')
+            #logging.info('db loop')
             try:
                 rows = DbTransfer.get_instance().pull_db_all_user()
                 DbTransfer.del_server_out_of_bound_safe(rows)
@@ -202,7 +202,7 @@ class DbTransfer(object):
         timeout = 30
         socket.setdefaulttimeout(timeout)
         while True:
-            logging.info('db loop2')
+            #logging.info('db loop2')
             try:
                 DbTransfer.get_instance().push_db_all_user()
             except Exception as e:
