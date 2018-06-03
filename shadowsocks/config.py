@@ -18,7 +18,7 @@ API_URL = 'http://domain/mu'
 API_PASS = 'mupass'
 NODE_ID = '1'
 CHECKTIME = 15
-SYNCTIME = 600
+SYNCTIME = 300
 
 #BIND IP
 #if you want bind ipv4 and ipv6 '[::]'
