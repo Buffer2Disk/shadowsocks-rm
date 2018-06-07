@@ -155,6 +155,19 @@ class DbTransfer(object):
         return rows
 
     @staticmethod
+    def pull_db_all_user_with_limit(limitstring):
+        conn = cymysql.connect(host=config.MYSQL_HOST, port=config.MYSQL_PORT, user=config.MYSQL_USER,
+                               passwd=config.MYSQL_PASS, db=config.MYSQL_DB, charset='utf8')
+        cur = conn.cursor()
+        cur.execute("SELECT port, u, d, transfer_enable, passwd, switch, enable FROM user "+"order by uid " + limitstring)
+        rows = []
+        for r in cur.fetchall():
+            rows.append(list(r))
+        cur.close()
+        conn.close()
+        return rows
+
+    @staticmethod
     def del_server_out_of_bound_safe(rows):
         for row in rows:
             server = json.loads(DbTransfer.get_instance().send_command('stat: {"server_port":%s}' % row[0]))
@@ -178,6 +191,29 @@ class DbTransfer(object):
                     # print('add: {"server_port": %s, "password":"%s"}'% (row[0], row[4]))
 
     @staticmethod
+    def del_server_out_of_bound_safe_with_threadname(rows,name):
+        for row in rows:
+            server = json.loads(DbTransfer.get_instance().send_command('stat: {"server_port":%s}' % row[0]))
+            if server['stat'] != 'ko':
+                if row[5] == 0 or row[6] == 0:
+                    # stop disable or switch off user
+                    logging.info(name + 'db stop server at port [%s] reason: disable' % (row[0]))
+                    DbTransfer.send_command('remove: {"server_port":%s}' % row[0])
+                elif row[1] + row[2] >= row[3]:
+                    # stop out bandwidth user
+                    logging.info(name + 'db stop server at port [%s] reason: out bandwidth' % (row[0]))
+                    DbTransfer.send_command('remove: {"server_port":%s}' % row[0])
+                if server['password'] != row[4]:
+                    # password changed
+                    logging.info(name + 'db stop server at port [%s] reason: password changed' % (row[0]))
+                    DbTransfer.send_command('remove: {"server_port":%s}' % row[0])
+            else:
+                if row[5] == 1 and row[6] == 1 and row[1] + row[2] < row[3]:
+                    logging.info(name + 'db start server at port [%s] pass [%s]' % (row[0], row[4]))
+                    DbTransfer.send_command('add: {"server_port": %s, "password":"%s"}' % (row[0], row[4]))
+                    # print('add: {"server_port": %s, "password":"%s"}'% (row[0], row[4]))
+
+    @staticmethod
     def thread_db():
         import socket
         import time
@@ -188,6 +224,24 @@ class DbTransfer(object):
             try:
                 rows = DbTransfer.get_instance().pull_db_all_user()
                 DbTransfer.del_server_out_of_bound_safe(rows)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                logging.warn('db thread except:%s' % e)
+            finally:
+                time.sleep(config.CHECKTIME)
+
+    @staticmethod
+    def thread_db_with_parm(threadname,limitstring):
+        import socket
+        import time
+        timeout = 30
+        socket.setdefaulttimeout(timeout)
+        while True:
+            #logging.info('db loop')
+            try:
+                rows = DbTransfer.get_instance().pull_db_all_user_with_limit(limitstring)
+                DbTransfer.del_server_out_of_bound_safe_with_threadname(rows,threadname)
             except Exception as e:
                 import traceback
                 traceback.print_exc()

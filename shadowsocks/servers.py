@@ -51,8 +51,36 @@ def main():
     }
     t = thread.start_new_thread(manager.run, (configer,))
     time.sleep(1)
-    t = thread.start_new_thread(DbTransfer.thread_db, ())
-    time.sleep(1)
+
+    # Refer ---> http://www.runoob.com/python/python-multithreading.html
+    # create multi threads(number is n) to manage all ports in database user table separately(by wzq)
+    # you can modify n to create more threads for better performance
+
+    # whether run in MultiThread Mode
+    if config.ManagePort_MultiThread:
+        #start from 1
+        i = 1
+        #thread number
+        n = config.ManagePort_ThreadNum
+        while i <= n:
+            try:
+                # str() will convert int to string
+                name = "thread-" + str(i) + "-"
+                if i == n:
+                    limit = "limit 100000 offset " + str((i-1) * 500)
+                else:
+                    limit = "limit 500 offset " + str((i-1) * 500)
+                t = thread.start_new_thread(DbTransfer.thread_db_with_parm, (name, limit,))
+                i = i + 1
+                time.sleep(1)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                logging.error('thread start except:%s' % e)
+    else:
+        t = thread.start_new_thread(DbTransfer.thread_db, ())
+        time.sleep(1)
+
     t = thread.start_new_thread(DbTransfer.thread_push, ())
 
     while True:
