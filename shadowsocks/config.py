@@ -21,7 +21,7 @@ CHECKTIME = 15
 SYNCTIME = 600
 
 ManagePort_MultiThread = True
-ManagePort_ThreadNum = 8
+ManagePort_ThreadNum = 10
 
 #BIND IP
 #if you want bind ipv4 and ipv6 '[::]'
