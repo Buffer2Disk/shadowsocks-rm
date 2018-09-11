@@ -245,7 +245,7 @@ class DbTransfer(object):
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                logging.warn('db thread except:%s' % e)
+                logging.warn(threadname + 'db thread except:%s' % e)
             finally:
                 time.sleep(config.CHECKTIME)
 
