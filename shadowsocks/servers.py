@@ -24,7 +24,8 @@ import signal
 import time
 
 if config.LOG_ENABLE:
-    logging.basicConfig(format='%(asctime)s %(filename)s[%(lineno)d] %(levelname)s %(message)s',datefmt='%Y-%m-%d %H:%M:%S',filename=config.LOG_FILE,level=config.LOG_LEVEL)
+    logging.basicConfig(format='%(asctime)s %(filename)s[%(lineno)d] %(levelname)s %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S', filename=config.LOG_FILE, level=config.LOG_LEVEL)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../'))
 from shadowsocks import shell, daemon, eventloop, tcprelay, udprelay, \
@@ -34,8 +35,10 @@ import manager
 import config
 from dbtransfer import DbTransfer
 
+
 def handler_SIGQUIT():
     return
+
 
 def main():
     configer = {
@@ -45,7 +48,7 @@ def main():
         },
         'method': '%s' % config.SS_METHOD,
         'manager_address': '%s:%s' % (config.MANAGE_BIND_IP, config.MANAGE_PORT),
-        'timeout': 185, # some protocol keepalive packet 3 min Eg bt
+        'timeout': 185,  # some protocol keepalive packet 3 min Eg bt
         'fast_open': False,
         'verbose': 1
     }
@@ -58,18 +61,19 @@ def main():
 
     # whether run in MultiThread Mode
     if config.ManagePort_MultiThread:
-        #start from 1
+        # start from 1
         i = 1
-        #thread number
+        # thread number
         n = config.ManagePort_ThreadNum
+        db_loop_num = config.DbLoopNum
         while i <= n:
             try:
                 # str() will convert int to string
                 name = "thread-" + str(i) + "-"
                 if i == n:
-                    limit = "limit 100000 offset " + str((i-1) * 500)
+                    limit = "limit 100000 offset " + str((i - 1) * db_loop_num)
                 else:
-                    limit = "limit 500 offset " + str((i-1) * 500)
+                    limit = "limit " + db_loop_num + " offset " + str((i - 1) * db_loop_num)
                 t = thread.start_new_thread(DbTransfer.thread_db_with_parm, (name, limit,))
                 i = i + 1
                 time.sleep(1)

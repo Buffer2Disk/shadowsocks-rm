@@ -22,6 +22,7 @@ SYNCTIME = 600
 
 ManagePort_MultiThread = True
 ManagePort_ThreadNum = 10
+DbLoopNum = 600
 
 #BIND IP
 #if you want bind ipv4 and ipv6 '[::]'
