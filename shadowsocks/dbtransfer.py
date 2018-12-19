@@ -34,8 +34,10 @@ class DbTransfer(object):
             cli.close()
             # TODO: bad way solve timed out
             time.sleep(0.05)
-        except:
-            logging.warn('send_command response')
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            logging.warn('send_command response:%s' % e)
         return data
 
     @staticmethod
@@ -125,7 +127,7 @@ class DbTransfer(object):
                 f = open("/proc/loadavg")
                 load = f.read().split()
                 f.close()
-                loadavg = load[0]+' '+load[1]+' '+load[2]+' '+load[3]+' '+load[4]
+                loadavg = load[0] + ' ' + load[1] + ' ' + load[2] + ' ' + load[3] + ' ' + load[4]
                 f = open("/proc/uptime")
                 t = f.read().split()
                 uptime = t[0]
@@ -139,7 +141,6 @@ class DbTransfer(object):
             else:
                 logging.warn('Not support panel version %s' % (config.PANEL_VERSION))
                 return
-
 
     @staticmethod
     def pull_db_all_user():
@@ -155,13 +156,14 @@ class DbTransfer(object):
         return rows
 
     @staticmethod
-    def pull_db_all_user_with_limit(limitstring):
+    def pull_db_all_user_with_limit(limitstring, rows):
         conn = cymysql.connect(host=config.MYSQL_HOST, port=config.MYSQL_PORT, user=config.MYSQL_USER,
                                passwd=config.MYSQL_PASS, db=config.MYSQL_DB, charset='utf8',
                                connect_timeout=8)
         cur = conn.cursor()
-        cur.execute("SELECT port, u, d, transfer_enable, passwd, switch, enable FROM user "+"order by uid " + limitstring)
-        rows = []
+        cur.execute(
+            "SELECT port, u, d, transfer_enable, passwd, switch, enable FROM user " + "order by uid " + limitstring)
+
         for r in cur.fetchall():
             rows.append(list(r))
         cur.close()
@@ -192,9 +194,13 @@ class DbTransfer(object):
                     # print('add: {"server_port": %s, "password":"%s"}'% (row[0], row[4]))
 
     @staticmethod
-    def del_server_out_of_bound_safe_with_threadname(rows,name):
+    def del_server_out_of_bound_safe_with_threadname(rows, name):
         for row in rows:
-            server = json.loads(DbTransfer.get_instance().send_command('stat: {"server_port":%s}' % row[0]))
+            data = DbTransfer.get_instance().send_command('stat: {"server_port":%s}' % row[0])
+            if data == '':
+                logging.warn('[%s] , port: [%s] get stat error ,maybe timeout exception occurs ' % (name, row[0]))
+                continue
+            server = json.loads(data)
             if server['stat'] != 'ko':
                 if row[5] == 0 or row[6] == 0:
                     # stop disable or switch off user
@@ -221,7 +227,7 @@ class DbTransfer(object):
         timeout = 30
         socket.setdefaulttimeout(timeout)
         while True:
-            #logging.info('db loop')
+            # logging.info('db loop')
             try:
                 rows = DbTransfer.get_instance().pull_db_all_user()
                 DbTransfer.del_server_out_of_bound_safe(rows)
@@ -233,21 +239,26 @@ class DbTransfer(object):
                 time.sleep(config.CHECKTIME)
 
     @staticmethod
-    def thread_db_with_parm(threadname,limitstring):
+    def thread_db_with_parm(threadname, limitstring):
         import socket
         import time
         timeout = 30
         socket.setdefaulttimeout(timeout)
+        rows = []
         while True:
-            #logging.info('db loop')
+            # logging.info('db loop')
             try:
-                rows = DbTransfer.get_instance().pull_db_all_user_with_limit(limitstring)
-                DbTransfer.del_server_out_of_bound_safe_with_threadname(rows,threadname)
+                DbTransfer.get_instance().pull_db_all_user_with_limit(limitstring, rows)
+                DbTransfer.del_server_out_of_bound_safe_with_threadname(rows, threadname)
+                # clear list
+                rows[:] = []
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 logging.warn(threadname + 'db thread except:%s' % e)
             finally:
+                # clear list when exception occurs
+                rows[:] = []
                 time.sleep(config.CHECKTIME)
 
     @staticmethod
@@ -257,7 +268,7 @@ class DbTransfer(object):
         timeout = 30
         socket.setdefaulttimeout(timeout)
         while True:
-            #logging.info('db loop2')
+            # logging.info('db loop2')
             try:
                 DbTransfer.get_instance().push_db_all_user()
             except Exception as e:

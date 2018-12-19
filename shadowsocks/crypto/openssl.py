@@ -79,11 +79,13 @@ class OpenSSLCrypto(object):
         if not cipher:
             cipher = load_cipher(cipher_name)
         if not cipher:
+            self.clean()
             raise Exception('cipher %s not found in libcrypto' % cipher_name)
         key_ptr = c_char_p(key)
         iv_ptr = c_char_p(iv)
         self._ctx = libcrypto.EVP_CIPHER_CTX_new()
         if not self._ctx:
+            self.clean()
             raise Exception('can not create cipher context')
         r = libcrypto.EVP_CipherInit_ex(self._ctx, cipher, None,
                                         key_ptr, iv_ptr, c_int(op))
@@ -110,6 +112,7 @@ class OpenSSLCrypto(object):
         if self._ctx:
             libcrypto.EVP_CIPHER_CTX_cleanup(self._ctx)
             libcrypto.EVP_CIPHER_CTX_free(self._ctx)
+            self._ctx = None
 
 
 ciphers = {

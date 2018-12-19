@@ -381,7 +381,7 @@ class DNSResolver(object):
             self._handle_data(data)
 
     def handle_periodic(self):
-        self._cache.sweep()
+        self._cache.sweep(source='asydns')
 
     def remove_callback(self, callback):
         hostname = self._cb_to_hostname.get(callback)
@@ -439,6 +439,7 @@ class DNSResolver(object):
                 self._loop.remove(self._sock)
             self._sock.close()
             self._sock = None
+            self._cache.clear(0)
 
 
 def test():

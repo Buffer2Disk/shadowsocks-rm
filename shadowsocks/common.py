@@ -24,6 +24,7 @@ import logging
 import hashlib
 import hmac
 
+from shadowsocks import lru_cache
 
 ONETIMEAUTH_BYTES = 10
 ONETIMEAUTH_CHUNK_BYTES = 12
@@ -136,7 +137,6 @@ def patch_socket():
 
 patch_socket()
 
-
 ADDRTYPE_IPV4 = 0x01
 ADDRTYPE_IPV6 = 0x04
 ADDRTYPE_HOST = 0x03
@@ -178,7 +178,7 @@ def parse_header(data):
             if len(data) >= 4 + addrlen:
                 dest_addr = data[2:2 + addrlen]
                 dest_port = struct.unpack('>H', data[2 + addrlen:4 +
-                                                     addrlen])[0]
+                                                                 addrlen])[0]
                 header_length = 4 + addrlen
             else:
                 logging.warn('header is too short')
@@ -254,6 +254,38 @@ class IPNetwork(object):
             return False
 
 
+class UDPAsyncDNSHandler(object):
+    dns_cache = lru_cache.LRUCache(timeout=1800)
+
+    def __init__(self):
+        pass
+
+    # def resolve(self, dns_resolver, remote_addr, call_back):
+    #     if remote_addr in UDPAsyncDNSHandler.dns_cache:
+    #         if call_back:
+    #             call_back("", remote_addr, UDPAsyncDNSHandler.dns_cache[remote_addr], self.params)
+    #     else:
+    #         self.call_back = call_back
+    #         self.remote_addr = remote_addr
+    #         dns_resolver.resolve(remote_addr[0], self._handle_dns_resolved)
+    #         UDPAsyncDNSHandler.dns_cache.sweep()
+
+    def resolve(self, server_addr, server_port):
+        addrs = self.dns_cache.get(server_addr, None)
+        if addrs is None:
+            addrs = socket.getaddrinfo(server_addr, server_port, 0,
+                                       socket.SOCK_DGRAM, socket.SOL_UDP)
+            if not addrs:
+                # drop
+                return
+            else:
+                logging.info("before sweep dns cache ,size = " + str(len(UDPAsyncDNSHandler.dns_cache)))
+                UDPAsyncDNSHandler.dns_cache[server_addr] = addrs
+                UDPAsyncDNSHandler.dns_cache.sweep(source='dns_cache')
+                logging.info("after sweep dns cache ,size = " + str(len(UDPAsyncDNSHandler.dns_cache)))
+        return addrs
+
+
 def test_inet_conv():
     ipv4 = b'8.8.4.4'
     b = inet_pton(socket.AF_INET, ipv4)
@@ -265,18 +297,18 @@ def test_inet_conv():
 
 def test_parse_header():
     assert parse_header(b'\x03\x0ewww.google.com\x00\x50') == \
-        (3, b'www.google.com', 80, 18)
+           (3, b'www.google.com', 80, 18)
     assert parse_header(b'\x01\x08\x08\x08\x08\x00\x35') == \
-        (1, b'8.8.8.8', 53, 7)
+           (1, b'8.8.8.8', 53, 7)
     assert parse_header((b'\x04$\x04h\x00@\x05\x08\x05\x00\x00\x00\x00\x00'
                          b'\x00\x10\x11\x00\x50')) == \
-        (4, b'2404:6800:4005:805::1011', 80, 19)
+           (4, b'2404:6800:4005:805::1011', 80, 19)
 
 
 def test_pack_header():
     assert pack_addr(b'8.8.8.8') == b'\x01\x08\x08\x08\x08'
     assert pack_addr(b'2404:6800:4005:805::1011') == \
-        b'\x04$\x04h\x00@\x05\x08\x05\x00\x00\x00\x00\x00\x00\x10\x11'
+           b'\x04$\x04h\x00@\x05\x08\x05\x00\x00\x00\x00\x00\x00\x10\x11'
     assert pack_addr(b'www.google.com') == b'\x03\x0ewww.google.com'
 
 

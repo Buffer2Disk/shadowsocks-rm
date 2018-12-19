@@ -325,10 +325,10 @@ class TCPRelayHandler(object):
                     return
             header_result = parse_header(data)
             if header_result is None:
-                raise Exception('[%s]can not parse header'%(self._config['server_port']))
+                raise Exception('[%s]can not parse header' % (self._config['server_port']))
             addrtype, remote_addr, remote_port, header_length = header_result
             logging.info('[%d]-connecting %s:%d from %s:%d' %
-                         (self._config['server_port'],common.to_str(remote_addr), remote_port,
+                         (self._config['server_port'], common.to_str(remote_addr), remote_port,
                           self._client_address[0], self._client_address[1]))
             if self._is_local is False:
                 # spec https://shadowsocks.org/en/spec/one-time-auth.html
@@ -645,30 +645,36 @@ class TCPRelayHandler(object):
             logging.debug('ignore handle_event: destroyed')
             return
         # order is important
-        if sock == self._remote_sock:
-            if event & eventloop.POLL_ERR:
-                self._on_remote_error()
-                if self._stage == STAGE_DESTROYED:
-                    return
-            if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
-                self._on_remote_read()
-                if self._stage == STAGE_DESTROYED:
-                    return
-            if event & eventloop.POLL_OUT:
-                self._on_remote_write()
-        elif sock == self._local_sock:
-            if event & eventloop.POLL_ERR:
-                self._on_local_error()
-                if self._stage == STAGE_DESTROYED:
-                    return
-            if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
-                self._on_local_read()
-                if self._stage == STAGE_DESTROYED:
-                    return
-            if event & eventloop.POLL_OUT:
-                self._on_local_write()
-        else:
-            logging.warn('unknown socket')
+        try:
+            if sock == self._remote_sock:
+                if event & eventloop.POLL_ERR:
+                    self._on_remote_error()
+                    if self._stage == STAGE_DESTROYED:
+                        return
+                if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
+                    self._on_remote_read()
+                    if self._stage == STAGE_DESTROYED:
+                        return
+                if event & eventloop.POLL_OUT:
+                    self._on_remote_write()
+            elif sock == self._local_sock:
+                if event & eventloop.POLL_ERR:
+                    self._on_local_error()
+                    if self._stage == STAGE_DESTROYED:
+                        return
+                if event & (eventloop.POLL_IN | eventloop.POLL_HUP):
+                    self._on_local_read()
+                    if self._stage == STAGE_DESTROYED:
+                        return
+                if event & eventloop.POLL_OUT:
+                    self._on_local_write()
+            else:
+                logging.warn('unknown socket')
+        except Exception as e:
+            shell.print_exception(e)
+            if self._config['verbose']:
+                traceback.print_exc()
+            self.destroy()
 
     def _log_error(self, e):
         logging.error('%s when handling connection from %s:%d' %
@@ -695,15 +701,24 @@ class TCPRelayHandler(object):
         if self._remote_sock:
             logging.debug('destroying remote')
             self._loop.remove(self._remote_sock)
-            del self._fd_to_handlers[self._remote_sock.fileno()]
+            try:
+                if self._remote_sock.fileno() in self._fd_to_handlers:
+                    del self._fd_to_handlers[self._remote_sock.fileno()]
+            except Exception as e:
+                logging.error('del fd to handlers error :%s' % e)
             self._remote_sock.close()
             self._remote_sock = None
         if self._local_sock:
             logging.debug('destroying local')
             self._loop.remove(self._local_sock)
-            del self._fd_to_handlers[self._local_sock.fileno()]
+            try:
+                if self._local_sock.fileno() in self._fd_to_handlers:
+                    del self._fd_to_handlers[self._local_sock.fileno()]
+            except Exception as e:
+                logging.error('del fd to handlers error:%s' % e)
             self._local_sock.close()
             self._local_sock = None
+        self._encryptor = None
         self._dns_resolver.remove_callback(self._handle_dns_resolved)
         self._server.remove_handler(self)
 
@@ -720,7 +735,7 @@ class TCPRelay(object):
         self._timeout = config['timeout']
         self._timeouts = []  # a list for all the handlers
         # we trim the timeouts once a while
-        self._timeout_offset = 0   # last checked position for timeout
+        self._timeout_offset = 0  # last checked position for timeout
         self._handler_to_timeouts = {}  # key: handler value: index in timeouts
 
         if is_local:
@@ -803,7 +818,8 @@ class TCPRelay(object):
                     else:
                         if handler.remote_address:
                             logging.warn('[%d]-timed out: %s:%d' %
-                                         (self._config['server_port'],handler.remote_address[0],handler.remote_address[1]))
+                                         (self._config['server_port'], handler.remote_address[0],
+                                          handler.remote_address[1]))
                         else:
                             logging.warn('timed out')
                         handler.destroy()

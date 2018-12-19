@@ -73,7 +73,6 @@ from shadowsocks import encrypt, eventloop, lru_cache, common, shell
 from shadowsocks.common import parse_header, pack_addr, onetimeauth_verify, \
     onetimeauth_gen, ONETIMEAUTH_BYTES, ADDRTYPE_AUTH
 
-
 BUF_SIZE = 65536
 
 
@@ -106,9 +105,11 @@ class UDPRelay(object):
         self._is_local = is_local
         self._cache = lru_cache.LRUCache(timeout=config['timeout'],
                                          close_callback=self._close_client)
-        self._client_fd_to_server_addr = \
-            lru_cache.LRUCache(timeout=config['timeout'])
-        self._dns_cache = lru_cache.LRUCache(timeout=300)
+        # self._client_fd_to_server_addr = \
+        #     lru_cache.LRUCache(timeout=config['timeout'])
+        self._client_fd_to_server_addr = {}
+
+        # self._dns_cache = lru_cache.LRUCache(timeout=300)
         self._eventloop = None
         self._closed = False
         self._sockets = set()
@@ -141,9 +142,14 @@ class UDPRelay(object):
 
     def _close_client(self, client):
         if hasattr(client, 'close'):
-            self._sockets.remove(client.fileno())
-            self._eventloop.remove(client)
-            client.close()
+            try:
+                self._sockets.remove(client.fileno())
+                self._eventloop.remove(client)
+                if client.fileno() in self._client_fd_to_server_addr:
+                    del self._client_fd_to_server_addr[client.fileno()]
+                client.close()
+            except Exception as e:
+                logging.error('udp _close_client error:%s' % e)
         else:
             # just an address
             pass
@@ -165,15 +171,16 @@ class UDPRelay(object):
             else:
                 data = data[3:]
         else:
-            data, key, iv = encrypt.dencrypt_all(self._password,
-                                                 self._method,
-                                                 data)
             # decrypt data
-            if not data:
-                logging.debug(
-                    'UDP handle_server: data is empty after decrypt'
-                )
+            try:
+                data, key, iv = encrypt.dencrypt_all(self._password,
+                                                     self._method,
+                                                     data)
+            except Exception:
+                logging.debug('UDP handle_server: decrypt data failed')
                 return
+            if not data:
+                logging.debug('UDP handle_server: data is empty after decrypt')
         header_result = parse_header(data)
         if header_result is None:
             return
@@ -195,15 +202,27 @@ class UDPRelay(object):
                 if onetimeauth_verify(_hash, data, _key) is False:
                     logging.warn('UDP one time auth fail')
                     return
-        addrs = self._dns_cache.get(server_addr, None)
+        # addrs = self._dns_cache.get(server_addr, None)
+        # if addrs is None:
+        #     addrs = socket.getaddrinfo(server_addr, server_port, 0,
+        #                                socket.SOCK_DGRAM, socket.SOL_UDP)
+        #     if not addrs:
+        # drop
+        # return
+        # else:
+        #     self._dns_cache[server_addr] = addrs
+
+        handle = common.UDPAsyncDNSHandler()
+        addrs = handle.resolve(server_addr, server_port)
         if addrs is None:
-            addrs = socket.getaddrinfo(server_addr, server_port, 0,
-                                       socket.SOCK_DGRAM, socket.SOL_UDP)
-            if not addrs:
-                # drop
-                return
-            else:
-                self._dns_cache[server_addr] = addrs
+            return
+
+        # logging.info("udp dns resolve :" + server_addr)
+        # addrs = socket.getaddrinfo(server_addr, server_port, 0,
+        #                            socket.SOCK_DGRAM, socket.SOL_UDP)
+        # if not addrs:
+        #     drop
+        #     return
 
         af, socktype, proto, canonname, sa = addrs[0]
         key = client_key(r_addr, af)
@@ -229,7 +248,11 @@ class UDPRelay(object):
             # spec https://shadowsocks.org/en/spec/one-time-auth.html
             if self._one_time_auth_enable:
                 data = self._ota_chunk_data_gen(key, iv, data)
-            data = encrypt.encrypt_all_m(key, iv, m, self._method, data)
+            try:
+                data = encrypt.encrypt_all_m(key, iv, m, self._method, data)
+            except Exception:
+                logging.debug("UDP handle_server: encrypt data failed")
+                return
             if not data:
                 return
         else:
@@ -255,7 +278,7 @@ class UDPRelay(object):
     def _handle_client(self, sock):
         data, r_addr = sock.recvfrom(BUF_SIZE)
         if not data:
-            logging.debug('UDP handle_client: data is empty')
+            logging.error('UDP handle_client: data is empty')
             return
         if self._stat_callback:
             self._stat_callback(self._listen_port, len(data))
@@ -265,13 +288,21 @@ class UDPRelay(object):
                 # drop
                 return
             data = pack_addr(r_addr[0]) + struct.pack('>H', r_addr[1]) + data
-            response = encrypt.encrypt_all(self._password, self._method, 1,
-                                           data)
+            try:
+                response = encrypt.encrypt_all(self._password, self._method, 1,
+                                               data)
+            except Exception:
+                logging.error("UDP handle_client: encrypt data failed")
+                return
             if not response:
                 return
         else:
-            data = encrypt.encrypt_all(self._password, self._method, 0,
-                                       data)
+            try:
+                data = encrypt.encrypt_all(self._password, self._method, 0,
+                                           data)
+            except Exception:
+                logging.error('UDP handle_client: decrypt data failed')
+                return
             if not data:
                 return
             header_result = parse_header(data)
@@ -305,34 +336,47 @@ class UDPRelay(object):
         loop.add_periodic(self.handle_periodic)
 
     def handle_event(self, sock, fd, event):
-        if sock == self._server_socket:
-            if event & eventloop.POLL_ERR:
-                logging.error('UDP server_socket err')
-            self._handle_server()
-        elif sock and (fd in self._sockets):
-            if event & eventloop.POLL_ERR:
-                logging.error('UDP client_socket err')
-            self._handle_client(sock)
+        try:
+            if sock == self._server_socket:
+                if event & eventloop.POLL_ERR:
+                    logging.error('UDP server_socket err')
+                self._handle_server()
+            elif sock and (fd in self._sockets):
+                if event & eventloop.POLL_ERR:
+                    logging.error('UDP client_socket err')
+                self._handle_client(sock)
+        except Exception as e:
+            logging.error('udp handle_event error:%s' % e)
 
     def handle_periodic(self):
-        if self._closed:
-            if self._server_socket:
-                self._server_socket.close()
-                self._server_socket = None
-                for sock in self._sockets:
-                    sock.close()
-                logging.info('closed UDP port %d', self._listen_port)
-        self._cache.sweep()
-        self._client_fd_to_server_addr.sweep()
-        self._dns_cache.sweep()
+        try:
+            if self._closed:
+                if self._server_socket:
+                    self._server_socket.close()
+                    self._server_socket = None
+                    for sock in self._sockets:
+                        sock.close()
+                    logging.info('closed UDP port %d', self._listen_port)
+                # self._client_fd_to_server_addr.clear(0)
+                # self._dns_cache.clear(0)
+            else:
+                self._cache.sweep(source='udprelay._cache')
+                # self._client_fd_to_server_addr.sweep(source='udprelay._client_fd_to_server_addr')
+                # self._dns_cache.sweep(source='udprelay._dns_cache')
+        except Exception as e:
+            logging.error('udp handle_periodic error:%s' % e)
 
     def close(self, next_tick=False):
         logging.debug('UDP close')
         self._closed = True
-        if not next_tick:
-            if self._eventloop:
-                self._eventloop.remove_periodic(self.handle_periodic)
-                self._eventloop.remove(self._server_socket)
-            self._server_socket.close()
-            for client in list(self._cache.values()):
-                client.close()
+        try:
+            if not next_tick:
+                # self._client_fd_to_server_addr.clear(0)
+                if self._eventloop:
+                    self._eventloop.remove_periodic(self.handle_periodic)
+                    self._eventloop.remove(self._server_socket)
+                self._server_socket.close()
+                del self._client_fd_to_server_addr
+                del self._cache
+        except Exception as e:
+            logging.error('udp close error:%s' % e)
