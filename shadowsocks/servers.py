@@ -73,7 +73,7 @@ def main():
                 if i == n:
                     limit = "limit 100000 offset " + str((i - 1) * db_loop_num)
                 else:
-                    limit = "limit " + db_loop_num + " offset " + str((i - 1) * db_loop_num)
+                    limit = "limit " + str(db_loop_num) + " offset " + str((i - 1) * db_loop_num)
                 t = thread.start_new_thread(DbTransfer.thread_db_with_parm, (name, limit,))
                 i = i + 1
                 time.sleep(1)
