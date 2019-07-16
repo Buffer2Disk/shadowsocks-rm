@@ -52,8 +52,14 @@ def main():
         'fast_open': False,
         'verbose': 1
     }
-    t = thread.start_new_thread(manager.run, (configer,))
-    time.sleep(1)
+    try:
+        m = manager.get_manager(configer)
+        t = thread.start_new_thread(m.run, ())
+        time.sleep(1)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logging.error('manger thread start except:%s' % e)
 
     # Refer ---> http://www.runoob.com/python/python-multithreading.html
     # create multi threads(number is n) to manage all ports in database user table separately(by wzq)
@@ -85,6 +91,7 @@ def main():
         t = thread.start_new_thread(DbTransfer.thread_db, ())
         time.sleep(1)
 
+    thread.start_new_thread(DbTransfer.thread_check_not_exist_user, (m,))
     t = thread.start_new_thread(DbTransfer.thread_push, ())
 
     while True:

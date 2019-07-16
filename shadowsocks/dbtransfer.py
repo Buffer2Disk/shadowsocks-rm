@@ -277,3 +277,33 @@ class DbTransfer(object):
                 logging.warn('db thread except:%s' % e)
             finally:
                 time.sleep(config.SYNCTIME)
+
+    @staticmethod
+    def thread_check_not_exist_user(manager):
+        # 查找 数据库中已经删掉的端口，但在节点的manager._relays中还存在的,需要把它remove掉
+        import socket
+        import time
+        timeout = 30
+        socket.setdefaulttimeout(timeout)
+
+        while True:
+            # logging.info('db loop')
+            try:
+                # 这里不能用多线程，因为取出来的rows必须是最全的，才能和manger的_relays里面的port进行比较，
+                # 否则就会造成线程之间互相因为找到不存在的端口而remove
+                rows = DbTransfer.get_instance().pull_db_all_user()
+                for port in manager.copy_relay():
+                    port_exist = False
+                    for row in rows:
+                        if row[0] == port:
+                            port_exist = True
+                            break
+                    if not port_exist:
+                        logging.info('db stop server at port [%s] reason: port removed in database' % port)
+                        DbTransfer.send_command('remove: {"server_port":%s}' % port)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                logging.warn('db thread except:%s' % e)
+            finally:
+                time.sleep(config.CHECK_USER_EXIST_TIME)

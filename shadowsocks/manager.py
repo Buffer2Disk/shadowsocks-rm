@@ -33,6 +33,15 @@ STAT_SEND_LIMIT = 50
 
 
 class Manager(object):
+    instance = None
+
+    @staticmethod
+    def get_instance(config):
+        if Manager.instance is None:
+            Manager.instance = Manager(config)
+            return Manager.instance
+        else:
+            return Manager.instance
 
     def __init__(self, config):
         self._config = config
@@ -112,6 +121,9 @@ class Manager(object):
             self._send_control_data(b'{"stat":"ok", "password":"%s"}' % servers[0]._config['password'])
         else:
             self._send_control_data(b'{"stat":"ko"}')
+
+    def copy_relay(self):
+        return self._relays.copy()
 
     def handle_event(self, sock, fd, event):
         if sock == self._control_socket and event == eventloop.POLL_IN:
@@ -207,8 +219,12 @@ class Manager(object):
         self._loop.run()
 
 
-def run(config):
-    Manager(config).run()
+# def run(config):
+#     Manager(config).run()
+
+
+def get_manager(config):
+    return Manager.get_instance(config)
 
 
 def test():

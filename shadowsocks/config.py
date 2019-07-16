@@ -18,6 +18,7 @@ API_URL = 'http://domain/mu'
 API_PASS = 'mupass'
 NODE_ID = '1'
 CHECKTIME = 15
+CHECK_USER_EXIST_TIME = 30
 SYNCTIME = 600
 
 ManagePort_MultiThread = True
