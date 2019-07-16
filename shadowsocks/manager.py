@@ -30,6 +30,11 @@ from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, shell
 
 BUF_SIZE = 1506
 STAT_SEND_LIMIT = 50
+
+# 参考 https://www.binss.me/blog/talk-about-the-with-usage-in-python/
+# https://stackoverflow.com/questions/29373448/what-is-the-optimal-use-of-a-lock-with-a-try-except-in-python-2-7
+# 使用with 来加锁，则无论是否抛出异常，锁最终都可以释放(防止锁包围的语句出现异常的时候，锁一直被等待的问题)
+# 由于python3 以后lock才有timeout参数，所以这里就不加timeout参数了
 LOCK = threading.Lock()
 
 
@@ -87,47 +92,44 @@ class Manager(object):
             self.add_port(a_config)
 
     def add_port(self, config):
-        LOCK.acquire()
-        port = int(config['server_port'])
-        servers = self._relays.get(port, None)
-        if servers:
-            logging.error("server already exists at %s:%d" % (config['server'],
-                                                              port))
-            return
-        # logging.info("adding server at %s:%d" % (config['server'], port))
-        t = tcprelay.TCPRelay(config, self._dns_resolver, False,
-                              self.stat_callback)
-        u = udprelay.UDPRelay(config, self._dns_resolver, False,
-                              self.stat_callback)
-        t.add_to_loop(self._loop)
-        u.add_to_loop(self._loop)
-        self._relays[port] = (t, u)
-        LOCK.release()
+        with LOCK:
+            port = int(config['server_port'])
+            servers = self._relays.get(port, None)
+            if servers:
+                logging.error("server already exists at %s:%d" % (config['server'],
+                                                                  port))
+                return
+            # logging.info("adding server at %s:%d" % (config['server'], port))
+            t = tcprelay.TCPRelay(config, self._dns_resolver, False,
+                                  self.stat_callback)
+            u = udprelay.UDPRelay(config, self._dns_resolver, False,
+                                  self.stat_callback)
+            t.add_to_loop(self._loop)
+            u.add_to_loop(self._loop)
+            self._relays[port] = (t, u)
 
     def remove_port(self, config):
-        LOCK.acquire()
-        port = int(config['server_port'])
-        servers = self._relays.get(port, None)
-        if servers:
-            logging.info("removing server at %s:%d" % (config['server'], port))
-            t, u = servers
-            t.close(next_tick=False)
-            u.close(next_tick=False)
-            del self._relays[port]
-        else:
-            logging.error("server not exist at %s:%d" % (config['server'],
-                                                         port))
-        LOCK.release()
+        with LOCK:
+            port = int(config['server_port'])
+            servers = self._relays.get(port, None)
+            if servers:
+                logging.info("removing server at %s:%d" % (config['server'], port))
+                t, u = servers
+                t.close(next_tick=False)
+                u.close(next_tick=False)
+                del self._relays[port]
+            else:
+                logging.error("server not exist at %s:%d" % (config['server'],
+                                                             port))
 
     def stat_port(self, config):
-        LOCK.acquire()
-        port = int(config['server_port'])
-        servers = self._relays.get(port, None)
-        if servers:
-            self._send_control_data(b'{"stat":"ok", "password":"%s"}' % servers[0]._config['password'])
-        else:
-            self._send_control_data(b'{"stat":"ko"}')
-        LOCK.release()
+        with LOCK:
+            port = int(config['server_port'])
+            servers = self._relays.get(port, None)
+            if servers:
+                self._send_control_data(b'{"stat":"ok", "password":"%s"}' % servers[0]._config['password'])
+            else:
+                self._send_control_data(b'{"stat":"ko"}')
 
     def copy_relay(self):
         return self._relays.copy()
