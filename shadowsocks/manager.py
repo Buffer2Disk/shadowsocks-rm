@@ -19,6 +19,7 @@ from __future__ import absolute_import, division, print_function, \
     with_statement
 
 import errno
+import threading
 import traceback
 import socket
 import logging
@@ -27,9 +28,9 @@ import collections
 
 from shadowsocks import common, eventloop, tcprelay, udprelay, asyncdns, shell
 
-
 BUF_SIZE = 1506
 STAT_SEND_LIMIT = 50
+LOCK = threading.Lock()
 
 
 class Manager(object):
@@ -86,13 +87,14 @@ class Manager(object):
             self.add_port(a_config)
 
     def add_port(self, config):
+        LOCK.acquire()
         port = int(config['server_port'])
         servers = self._relays.get(port, None)
         if servers:
             logging.error("server already exists at %s:%d" % (config['server'],
                                                               port))
             return
-        #logging.info("adding server at %s:%d" % (config['server'], port))
+        # logging.info("adding server at %s:%d" % (config['server'], port))
         t = tcprelay.TCPRelay(config, self._dns_resolver, False,
                               self.stat_callback)
         u = udprelay.UDPRelay(config, self._dns_resolver, False,
@@ -100,8 +102,10 @@ class Manager(object):
         t.add_to_loop(self._loop)
         u.add_to_loop(self._loop)
         self._relays[port] = (t, u)
+        LOCK.release()
 
     def remove_port(self, config):
+        LOCK.acquire()
         port = int(config['server_port'])
         servers = self._relays.get(port, None)
         if servers:
@@ -113,14 +117,17 @@ class Manager(object):
         else:
             logging.error("server not exist at %s:%d" % (config['server'],
                                                          port))
+        LOCK.release()
 
     def stat_port(self, config):
+        LOCK.acquire()
         port = int(config['server_port'])
         servers = self._relays.get(port, None)
         if servers:
             self._send_control_data(b'{"stat":"ok", "password":"%s"}' % servers[0]._config['password'])
         else:
             self._send_control_data(b'{"stat":"ko"}')
+        LOCK.release()
 
     def copy_relay(self):
         return self._relays.copy()
@@ -208,7 +215,7 @@ class Manager(object):
                                     errno.EWOULDBLOCK, errno.WSAEWOULDBLOCK):
                         return
                 elif error_no in (errno.EAGAIN, errno.EINPROGRESS,
-                                errno.EWOULDBLOCK):
+                                  errno.EWOULDBLOCK):
                     return
                 else:
                     shell.print_exception(e)
@@ -315,6 +322,7 @@ def test():
 
     manager._loop.stop()
     t.join()
+
 
 if __name__ == '__main__':
     test()
