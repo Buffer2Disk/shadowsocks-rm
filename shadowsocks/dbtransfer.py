@@ -155,6 +155,20 @@ class DbTransfer(object):
         conn.close()
         return rows
 
+    # 计算数据库与节点port的差集的时候使用
+    @staticmethod
+    def pull_db_all_user_ports():
+        conn = cymysql.connect(host=config.MYSQL_HOST, port=config.MYSQL_PORT, user=config.MYSQL_USER,
+                               passwd=config.MYSQL_PASS, db=config.MYSQL_DB, charset='utf8')
+        cur = conn.cursor()
+        cur.execute("SELECT port FROM user")
+        rows = []
+        for r in cur.fetchall():
+            rows.append(r[0])
+        cur.close()
+        conn.close()
+        return rows
+
     @staticmethod
     def pull_db_all_user_with_limit(limitstring, rows):
         conn = cymysql.connect(host=config.MYSQL_HOST, port=config.MYSQL_PORT, user=config.MYSQL_USER,
@@ -278,6 +292,8 @@ class DbTransfer(object):
             finally:
                 time.sleep(config.SYNCTIME)
 
+    # 这里不能用多线程，因为取出来的rows必须是最全的，才能和manger的_relays里面的port进行比较，
+    # 否则就会造成线程之间互相因为找到不存在的端口而remove
     @staticmethod
     def thread_check_not_exist_user(manager):
         # 查找 数据库中已经删掉的端口，但在节点的manager._relays中还存在的,需要把它remove掉
@@ -289,18 +305,18 @@ class DbTransfer(object):
         while True:
             # logging.info('db loop')
             try:
-                # 这里不能用多线程，因为取出来的rows必须是最全的，才能和manger的_relays里面的port进行比较，
-                # 否则就会造成线程之间互相因为找到不存在的端口而remove
-                rows = DbTransfer.get_instance().pull_db_all_user()
-                for port in manager.copy_relay():
-                    port_exist = False
-                    for row in rows:
-                        if row[0] == port:
-                            port_exist = True
-                            break
-                    if not port_exist:
-                        logging.info('db stop server at port [%s] reason: port removed in database' % port)
-                        DbTransfer.send_command('remove: {"server_port":%s}' % port)
+                # 使用计算差集的方式，对cpu消耗比较少， 时间复杂度 O(n)
+                # 不要直接用两个大list来嵌套循环，这种粗糙的实现方式时间复杂度是 O(n^2)
+                # 参考 https://v2ex.com/t/583594
+                # https://www.cnblogs.com/zhangjianzhi/p/3820864.html
+                rows = DbTransfer.get_instance().pull_db_all_user_ports()
+                relay_ports = manager.copy_relay().keys()
+                logging.info('begin to calculate redundant ports')
+                redundant_ports = set(relay_ports).difference(rows)
+                # logging.info('redundant ports num is %d' % len(redundant_ports))
+                for port in redundant_ports:
+                    logging.info('db stop server at port [%s] reason: port removed in database' % port)
+                    DbTransfer.send_command('remove: {"server_port":%s}' % port)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
